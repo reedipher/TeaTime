@@ -1,119 +1,162 @@
-# Credentials Management
+# Credentials Management for Teatime
 
-## Development Environment
+This document provides guidance on setting up and managing credentials for the Teatime golf booking system, both for local development and AWS deployment.
 
-### Using .env Files
+## Local Development
 
-For local development, we'll use a `.env` file to store sensitive credentials. This file **should never be committed to version control**.
+### Setting Up Your .env File
 
-1. Create a `.env` file in the root directory:
-
-```bash
-# Tea Time .env file
-
-# Club Caddie Credentials
-CLUB_CADDIE_USERNAME="your_username"
-CLUB_CADDIE_PASSWORD="your_password"
-
-# AWS Configuration (for local development)
-AWS_PROFILE="teatime"
-AWS_REGION="us-east-1" # Or your preferred region
-```
-
-2. Add `.env` to your `.gitignore` file:
-
-```
-# .gitignore
-.env
-*.env
-```
-
-3. Load environment variables in Python:
-
-```python
-from dotenv import load_dotenv
-import os
-
-load_dotenv()  # Load variables from .env
-
-username = os.environ.get("CLUB_CADDIE_USERNAME")
-password = os.environ.get("CLUB_CADDIE_PASSWORD")
-```
-
-### Required Packages
-
-Install the dotenv package to use this approach:
+1. Copy the template configuration file:
 
 ```bash
-pip install python-dotenv
+cp config/.env.example .env
 ```
 
-## Production Environment
+2. Edit the `.env` file with your Club Caddie credentials:
 
-### AWS Secrets Manager
+```
+CLUB_CADDIE_USERNAME=your_username_here
+CLUB_CADDIE_PASSWORD=your_password_here
+```
 
-For the production environment, we'll store credentials securely in AWS Secrets Manager:
+3. Configure additional settings as needed:
+
+```
+# Booking Preferences
+TARGET_TIME=14:00       # Format: HH:MM in 24-hour time
+PLAYER_COUNT=4          # Number of players to book (typically 2-4)
+
+# Runtime Mode
+DRY_RUN=true            # Set to false for actual booking
+
+# Debug Settings
+DEBUG_INTERACTIVE=false # Set to true for interactive debugging
+```
+
+### Credential Security Best Practices
+
+- **Never commit** your `.env` file to version control (it's already in `.gitignore`)
+- Use different credentials for testing vs. production
+- Regularly update your passwords
+
+## AWS Deployment
+
+For the serverless AWS deployment, credentials will be managed using AWS Secrets Manager.
+
+### Setting Up AWS Secrets Manager
 
 1. Create a secret in AWS Secrets Manager:
 
 ```bash
 aws secretsmanager create-secret \
-    --name tea-time/club-caddie \
+    --name teatime/club-caddie-credentials \
     --description "Club Caddie login credentials" \
     --secret-string '{"username":"your_username","password":"your_password"}'
 ```
 
-2. Update IAM roles to allow Lambda functions to access this secret.
+2. Update your Lambda function's IAM role to include permission to access this secret:
 
-3. Retrieve secrets in Lambda functions:
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "secretsmanager:GetSecretValue"
+            ],
+            "Resource": "arn:aws:secretsmanager:region:account-id:secret:teatime/club-caddie-credentials-*"
+        }
+    ]
+}
+```
+
+3. In your Lambda function code, retrieve the credentials:
 
 ```python
 import boto3
 import json
+import os
+from botocore.exceptions import ClientError
 
-def get_credentials():
-    client = boto3.client('secretsmanager')
-    response = client.get_secret_value(SecretId='tea-time/club-caddie')
-    secret = json.loads(response['SecretString'])
-    return secret['username'], secret['password']
+def get_secret():
+    secret_name = "teatime/club-caddie-credentials"
+    region_name = "us-east-1"  # Use your AWS region
+    
+    # Create a Secrets Manager client
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=region_name
+    )
+    
+    try:
+        get_secret_value_response = client.get_secret_value(
+            SecretId=secret_name
+        )
+        secret = get_secret_value_response['SecretString']
+        secret_dict = json.loads(secret)
+        return secret_dict['username'], secret_dict['password']
+    except ClientError as e:
+        # Handle exceptions appropriately
+        print(f"Error retrieving secret: {e}")
+        raise e
+
+# Use the credentials
+username, password = get_secret()
 ```
 
-### Infrastructure as Code
+### Other Configuration Values
 
-When deploying with CloudFormation or AWS CDK, define the secret as part of your stack:
+Other configuration values (non-sensitive) should be stored as Lambda Environment Variables:
 
-```python
-# Example using AWS CDK
-from aws_cdk import aws_secretsmanager as secretsmanager
+- `TARGET_TIME`: Target tee time in HH:MM format
+- `PLAYER_COUNT`: Number of players to book for
+- `DRY_RUN`: Whether to run in dry-run mode
+- `MAX_RETRIES`: Number of retry attempts
+- `WAIT_AFTER_COMPLETION`: Whether to wait after completion
 
-credentials_secret = secretsmanager.Secret(self, "ClubCaddieCredentials",
-    secret_name="tea-time/club-caddie",
-    description="Club Caddie login credentials"
-)
+## Rotation and Maintenance
 
-# Grant the Lambda function access to the secret
-credentials_secret.grant_read(booking_lambda)
+### Password Updates
+
+When the Club Caddie password changes:
+
+1. **Local Development**: Update your `.env` file with the new password
+2. **AWS Deployment**: Update the secret in AWS Secrets Manager:
+
+```bash
+aws secretsmanager update-secret \
+    --secret-id teatime/club-caddie-credentials \
+    --secret-string '{"username":"your_username","password":"your_new_password"}'
 ```
 
-## Security Best Practices
+### Monitoring Access
 
-1. **Never commit credentials** to Git repositories
-2. **Limit access** to secrets based on the principle of least privilege
-3. **Rotate credentials** periodically
-4. **Monitor access** to secrets via CloudTrail
-5. **Use environment-specific secrets** for dev, staging, and production
+For AWS deployments, enable CloudTrail logging to monitor access to your secrets:
 
-## Additional Configuration
-
-For advanced configuration needs beyond simple credentials:
-
-1. **Parameter Store** for less sensitive configuration:
-```python
-import boto3
-
-ssm = boto3.client('ssm')
-response = ssm.get_parameter(Name='/tea-time/config/preferred-time', WithDecryption=False)
-preferred_time = response['Parameter']['Value']
+```bash
+aws cloudtrail create-trail \
+    --name SecretsManagerTrail \
+    --s3-bucket-name your-bucket-name \
+    --is-multi-region-trail
+    
+aws cloudtrail start-logging --name SecretsManagerTrail
 ```
 
-2. **App Config** for feature flags and configuration management
+## Troubleshooting
+
+### Common Credential Issues
+
+1. **Authentication Failures**:
+   - Verify credentials are correct in `.env` or Secrets Manager
+   - Check if Club Caddie account is locked or requires password reset
+   - Try logging in manually to confirm account status
+
+2. **AWS Permissions**:
+   - Verify Lambda execution role has appropriate permissions
+   - Check CloudWatch logs for access denied errors
+
+3. **Environment Setup**:
+   - Ensure `.env` file is in the correct location for local development
+   - Verify Lambda environment variables are correctly set
