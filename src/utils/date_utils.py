@@ -1,41 +1,75 @@
 # src/utils/date_utils.py
 from datetime import datetime, timedelta
+import logging
 
-def calculate_target_saturday():
+# Set up logger
+logger = logging.getLogger("teatime")
+
+def calculate_next_available_date(target_weekday, max_days_ahead=7):
     """
-    Calculate the target Saturday date that is at least 8 days in the future.
-    Returns date in YYYY-MM-DD format.
+    Calculate the next date that falls on the target weekday and is within the
+    booking window (not more than max_days_ahead days out)
+    
+    Args:
+        target_weekday: Day of week (0=Monday, 6=Sunday)
+        max_days_ahead: Maximum days in the future to look
+        
+    Returns:
+        Date in YYYY-MM-DD format
     """
     today = datetime.now()
     
-    # Calculate days until next Saturday (weekday 5)
-    days_until_saturday = (5 - today.weekday()) % 7
+    # Calculate days until the next occurrence of target_weekday
+    days_until_target = (target_weekday - today.weekday()) % 7
     
-    # If today is Saturday, we want next Saturday
-    if days_until_saturday == 0:
-        days_until_saturday = 7
+    # If days_until_target is 0, it means today is the target weekday
+    # In that case, we're looking at the occurrence 7 days from now
+    if days_until_target == 0:
+        days_until_target = 7
     
-    # Add days to get to next Saturday
-    next_saturday = today + timedelta(days=days_until_saturday)
+    # Calculate the next target date
+    next_target_date = today + timedelta(days=days_until_target)
     
-    # Ensure we're looking at least 8 days ahead
-    if (next_saturday - today).days < 8:
-        next_saturday = next_saturday + timedelta(days=7)
+    # Check if this date is within our booking window
+    days_ahead = (next_target_date - today).days
     
-    # Format date as YYYY-MM-DD
-    return next_saturday.strftime("%Y-%m-%d")
+    if days_ahead > max_days_ahead:
+        logger.info(f"Next {target_weekday} is {days_ahead} days ahead, which exceeds the {max_days_ahead}-day booking window")
+        return None
+    
+    logger.info(f"Calculated target date: {next_target_date.strftime('%Y-%m-%d')} ({days_ahead} days from today)")
+    return next_target_date.strftime("%Y-%m-%d")
 
-def calculate_dates_range(days_ahead=8, num_days=1):
+def calculate_target_saturday(max_days_ahead=7):
     """
-    Calculate a range of dates starting from X days ahead.
-    Returns a list of dates in YYYY-MM-DD format.
+    Calculate the next Saturday within the booking window
+    Returns date in YYYY-MM-DD format or None if not available
+    """
+    # Saturday is weekday 5 (0=Monday, 6=Sunday)
+    return calculate_next_available_date(5, max_days_ahead)
+
+def calculate_target_sunday(max_days_ahead=7):
+    """
+    Calculate the next Sunday within the booking window
+    Returns date in YYYY-MM-DD format or None if not available
+    """
+    # Sunday is weekday 6 (0=Monday, 6=Sunday)
+    return calculate_next_available_date(6, max_days_ahead)
+
+def calculate_available_dates(max_days_ahead=7):
+    """
+    Calculate all available dates within the booking window
+    Returns a list of dates in YYYY-MM-DD format
     """
     today = datetime.now()
-    start_date = today + timedelta(days=days_ahead)
-    
     dates = []
-    for i in range(num_days):
-        date = start_date + timedelta(days=i)
-        dates.append(date.strftime("%Y-%m-%d"))
+    
+    for i in range(max_days_ahead + 1):
+        date = today + timedelta(days=i)
+        dates.append({
+            'date': date.strftime("%Y-%m-%d"),
+            'weekday': date.strftime("%A"),
+            'days_ahead': i
+        })
     
     return dates
