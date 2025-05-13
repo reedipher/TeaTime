@@ -61,7 +61,13 @@ conda env create -f environment.yml
 conda activate teatime
 ```
 
-3. Configure environment variables
+3. Install testing dependencies
+
+```bash
+python src/tests/install_dependencies.py
+```
+
+4. Configure environment variables
 
 Copy the template and fill in your details:
 
@@ -70,11 +76,34 @@ cp config/.env.example .env
 # Edit .env with your credentials and preferences
 ```
 
-4. Run the tee time booking script
+5. Run a test booking flow (always runs in dry-run mode)
 
 ```bash
-python src/functions/login_automation.py
+python src/tests/run_tests.py booking_flow
 ```
+
+### Testing Framework
+
+The project includes a comprehensive testing framework to validate the booking process:
+
+```bash
+# List available tests
+python src/tests/run_tests.py
+
+# Run login component test
+python src/tests/run_tests.py login
+
+# Run navigation component test 
+python src/tests/run_tests.py navigation
+
+# Run full booking flow test (always in dry-run mode)
+python src/tests/run_tests.py booking_flow
+
+# Run any test with interactive debugging (pauses at key steps)
+python src/tests/run_tests.py login --debug
+```
+
+Test results and HTML reports are saved in `artifacts/test_results/` directory.
 
 ### Configuration Options
 
