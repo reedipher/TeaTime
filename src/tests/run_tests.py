@@ -16,15 +16,16 @@ import inspect
 import logging
 from pathlib import Path
 
-# Add parent directory to path so we can import our modules
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Add top directory to path so we can import our modules
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+sys.path.append(project_root)
 
 # Import test modules
-from tests.functional.test_login import LoginTest
-from tests.functional.test_navigation import NavigationTest
-from tests.functional.test_booking_flow import BookingFlowTest
-from tests.functional.test_base import run_test
-from tests.utils.report_generator import generate_report, generate_index_report
+from src.tests.functional.test_login import LoginTest
+from src.tests.functional.test_navigation import NavigationTest
+from src.tests.functional.test_booking_flow import BookingFlowTest
+from src.tests.functional.test_base import run_test
+from src.tests.utils.report_generator import generate_report, generate_index_report
 
 # Configure logging
 logging.basicConfig(
