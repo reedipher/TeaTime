@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teatime - Golf Booking System</title>
+    <style>
+        :root {
+            --primary: #2c8c3c;
+            --secondary: #f8f8f8;
+            --accent: #f9a826;
+            --text: #333333;
+            --light-gray: #e0e0e0;
+            --white: #ffffff;
+            --shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Arial', sans-serif;
+        }
+        
+        body {
+            background-color: var(--secondary);
+            color: var(--text);
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background-color: var(--primary);
+            color: var(--white);
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        .logo svg {
+            fill: var(--white);
+        }
+        
+        nav ul {
+            display: flex;
+            list-style: none;
+        }
+        
+        nav ul li {
+            margin-left: 20px;
+        }
+        
+        nav ul li a {
+            color: var(--white);
+            text-decoration: none;
+            padding: 5px;
+        }
+        
+        nav ul li a:hover {
+            border-bottom: 2px solid var(--white);
+        }
+        
+        .main {
+            display: flex;
+            margin-top: 20px;
+        }
+        
+        .sidebar {
+            width: 250px;
+            background-color: var(--white);
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: var(--shadow);
+            margin-right: 20px;
+        }
+        
+        .content {
+            flex: 1;
+            background-color: var(--white);
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: var(--shadow);
+        }
+        
+        h1, h2, h3 {
+            color: var(--primary);
+            margin-bottom: 15px;
+        }
+        
+        .calendar {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 5px;
+            margin-top: 20px;
+        }
+        
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .calendar-nav {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .calendar-nav button {
+            background-color: var(--primary);
+            color: var(--white);
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        .day-header {
+            text-align: center;
+            font-weight: bold;
+            padding: 10px;
+            background-color: var(--primary);
+            color: var(--white);
+            border-radius: 5px;
+        }
+        
+        .day {
+            background-color: var(--white);
+            border: 1px solid var(--light-gray);
+            min-height: 100px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        
+        .day-number {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .day.inactive {
+            background-color: var(--secondary);
+            color: var(--light-gray);
+        }
+        
+        .day.today {
+            background-color: rgba(44, 140, 60, 0.1);
+        }
+        
+        .day.selected {
+            border: 2px solid var(--primary);
+        }
+        
+        .day.has-booking {
+            position: relative;
+        }
+        
+        .day.has-booking::after {
+            content: "✓";
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            color: var(--primary);
+            font-size: 0.8rem;
+        }
+        
+        .time-slot {
+            font-size: 0.8rem;
+            padding: 3px;
+            margin-bottom: 2px;
+            background-color: rgba(44, 140, 60, 0.2);
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        
+        .time-slot.selected {
+            background-color: var(--primary);
+            color: var(--white);
+        }
+        
+        .time-slot.booked {
+            background-color: var(--accent);
+            color: var(--white);
+        }
+        
+        .user-profile {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: var(--accent);
+            margin-right: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--white);
+            font-weight: bold;
+        }
+        
+        .preferences {
+            margin-top: 30px;
+        }
+        
+        .preference-item {
+            margin-bottom: 15px;
+        }
+        
+        .preference-item label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .preference-item select,
+        .preference-item input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--light-gray);
+            border-radius: 5px;
+        }
+        
+        .btn {
+            background-color: var(--primary);
+            color: var(--white);
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 15px;
+            display: inline-block;
+        }
+        
+        .btn:hover {
+            opacity: 0.9;
+        }
+        
+        .status-card {
+            background-color: rgba(44, 140, 60, 0.1);
+            border-left: 4px solid var(--primary);
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+        
+        .status-label {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .status-message {
+            font-size: 0.9rem;
+        }
+        
+        .player-list {
+            margin-top: 20px;
+        }
+        
+        .player {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: var(--secondary);
+            border-radius: 5px;
+        }
+        
+        .player-avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: var(--primary);
+            margin-right: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--white);
+            font-size: 0.8rem;
+        }
+        
+        @media (max-width: 768px) {
+            .main {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                margin-right: 0;
+                margin-bottom: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+                <path d="M19.1 4.9C19 4.8 18.9 4.6 18.7 4.5L16.7 3.4C16.3 3.2 15.8 3.3 15.5 3.6L13 6.1L7 5C6.4 4.9 5.9 5.4 6 6L6.8 10.5L4.5 13.5C4.3 13.7 4.2 14 4.2 14.3L4 17.8C4 18.3 4.3 18.7 4.8 18.9L7.3 19.9C7.5 20 7.7 20 8 20C8.2 20 8.4 19.9 8.6 19.8L11.6 17.7L15.8 19.6C16 19.7 16.2 19.7 16.4 19.7C16.8 19.7 17.1 19.5 17.3 19.2L19.9 15.3C20.1 15 20.1 14.7 20 14.4L18.7 10.5L19.8 6.1C19.9 5.7 19.6 5.2 19.1 4.9ZM16.8 14.6L13.7 16.2L9.3 14.2C9 14.1 8.7 14 8.4 14.1L6.5 14.9L6.7 12.6L8.4 10.3C8.6 10.1 8.7 9.8 8.6 9.5L8 6.6L11.6 7.3C11.9 7.4 12.2 7.3 12.4 7L14 5.4L15.1 6L14.2 9.2C14.1 9.5 14.2 9.9 14.4 10.1L16.3 12L16.8 14.6Z"/>
+                <path d="M15 10C14.4 10 14 10.4 14 11C14 11.6 14.4 12 15 12C15.6 12 16 11.6 16 11C16 10.4 15.6 10 15 10Z"/>
+            </svg>
+            <span>Teatime</span>
+        </div>
+        <nav>
+            <ul>
+                <li><a href="#" class="active">Book</a></li>
+                <li><a href="#">History</a></li>
+                <li><a href="#">Settings</a></li>
+                <li><a href="#">Logout</a></li>
+            </ul>
+        </nav>
+    </header>
+    <div class="container">
+        <div class="main">
+            <div class="sidebar">
+                <div class="user-profile">
+                    <div class="user-avatar">JD</div>
+                    <div>
+                        <div>John Doe</div>
+                        <div style="font-size: 0.8rem; color: #666;">Member #12345</div>
+                    </div>
+                </div>
+                <div class="preferences">
+                    <h3>Booking Preferences</h3>
+                    <div class="preference-item">
+                        <label for="preferred-time">Preferred Time</label>
+                        <select id="preferred-time">
+                            <option>14:00 (2:00 PM)</option>
+                            <option>08:00 (8:00 AM)</option>
+                            <option>09:00 (9:00 AM)</option>
+                            <option>10:00 (10:00 AM)</option>
+                        </select>
+                    </div>
+                    <div class="preference-item">
+                        <label for="player-count">Player Count</label>
+                        <select id="player-count">
+                            <option>4</option>
+                            <option>3</option>
+                            <option>2</option>
+                            <option>1</option>
+                        </select>
+                    </div>
+                    <div class="preference-item">
+                        <label for="day-preference">Preferred Days</label>
+                        <select id="day-preference">
+                            <option>Sunday</option>
+                            <option>Saturday</option>
+                            <option>Weekdays</option>
+                            <option>Any Day</option>
+                        </select>
+                    </div>
+                    <button class="btn">Save Preferences</button>
+                </div>
+                <div class="status-card">
+                    <div class="status-label">Next Booking</div>
+                    <div class="status-message">Sunday, May 19 at 2:00 PM (scheduled)</div>
+                </div>
+            </div>
+            <div class="content">
+                <h2>Book a Tee Time</h2>
+                <div class="calendar-header">
+                    <h3>May 2025</h3>
+                    <div class="calendar-nav">
+                        <button>◀ Previous</button>
+                        <button>Today</button>
+                        <button>Next ▶</button>
+                    </div>
+                </div>
+                <div class="calendar">
+                    <div class="day-header">Sun</div>
+                    <div class="day-header">Mon</div>
+                    <div class="day-header">Tue</div>
+                    <div class="day-header">Wed</div>
+                    <div class="day-header">Thu</div>
+                    <div class="day-header">Fri</div>
+                    <div class="day-header">Sat</div>
+                    
+                    <!-- Week 1 -->
+                    <div class="day inactive">
+                        <div class="day-number">28</div>
+                    </div>
+                    <div class="day inactive">
+                        <div class="day-number">29</div>
+                    </div>
+                    <div class="day inactive">
+                        <div class="day-number">30</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">1</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">2</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">3</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">4</div>
+                    </div>
+                    
+                    <!-- Week 2 -->
+                    <div class="day">
+                        <div class="day-number">5</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">6</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">7</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">8</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">9</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">10</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">11</div>
+                    </div>
+                    
+                    <!-- Week 3 -->
+                    <div class="day">
+                        <div class="day-number">12</div>
+                    </div>
+                    <div class="day today">
+                        <div class="day-number">13</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">14</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">15</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">16</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">17</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">18</div>
+                    </div>
+                    
+                    <!-- Week 4 -->
+                    <div class="day selected has-booking">
+                        <div class="day-number">19</div>
+                        <div class="time-slot booked">14:00</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">20</div>
+                        <div class="time-slot">08:00</div>
+                        <div class="time-slot">09:00</div>
+                        <div class="time-slot selected">14:00</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">21</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">22</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">23</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">24</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">25</div>
+                    </div>
+                    
+                    <!-- Week 5 -->
+                    <div class="day">
+                        <div class="day-number">26</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">27</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">28</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">29</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">30</div>
+                    </div>
+                    <div class="day">
+                        <div class="day-number">31</div>
+                    </div>
+                    <div class="day inactive">
+                        <div class="day-number">1</div>
+                    </div>
+                </div>
+                
+                <h3 style="margin-top: 30px;">Selected Tee Time</h3>
+                <p>Sunday, May 19 at 2:00 PM</p>
+                
+                <h3 style="margin-top: 20px;">Players</h3>
+                <div class="player-list">
+                    <div class="player">
+                        <div class="player-avatar">JD</div>
+                        <div>John Doe (You)</div>
+                    </div>
+                    <div class="player">
+                        <div class="player-avatar">MS</div>
+                        <div>Mike Smith</div>
+                    </div>
+                    <div class="player">
+                        <div class="player-avatar">RJ</div>
+                        <div>Robert Johnson</div>
+                    </div>
+                    <div class="player">
+                        <div class="player-avatar">TB</div>
+                        <div>Tom Baker</div>
+                    </div>
+                </div>
+                
+                <button class="btn" style="margin-top: 30px;">Book This Tee Time</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
