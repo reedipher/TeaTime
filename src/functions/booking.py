@@ -3,12 +3,13 @@ import os
 import asyncio
 import logging
 import re
+import json
 from datetime import datetime, timedelta
 from playwright.async_api import async_playwright
 from dotenv import load_dotenv
 
 # Import utilities
-from ..utils.screenshot import take_screenshot
+from ..utils.screenshot import take_screenshot, take_detailed_screenshot, debug_interactive
 from ..utils.date_utils import calculate_target_sunday, calculate_available_dates
 
 # Set up logger
@@ -16,6 +17,30 @@ logger = logging.getLogger("teatime")
 
 # Load environment variables
 load_dotenv()
+
+async def wait_for_element_with_retry(page, selector, timeout=10000, retries=3):
+    """
+    Wait for an element with retries
+    
+    Args:
+        page: Playwright page object
+        selector: Selector to wait for
+        timeout: Timeout in ms for each attempt
+        retries: Number of retry attempts
+        
+    Returns:
+        element or None: The found element or None if not found
+    """
+    for attempt in range(retries):
+        try:
+            element = await page.wait_for_selector(selector, timeout=timeout)
+            return element
+        except Exception as e:
+            if attempt == retries - 1:
+                logger.error(f"Failed to find element {selector} after {retries} attempts: {str(e)}")
+                return None
+            logger.info(f"Retry {attempt+1}/{retries} waiting for {selector}")
+            await asyncio.sleep(1)
 
 async def navigate_to_tee_sheet(page, target_date=None):
     """
@@ -69,13 +94,46 @@ async def navigate_to_booking_page(page, target_date):
         target_date: Date string in YYYY-MM-DD format
     """
     try:
-        # First, click the "Book a Member Tee Time" link
+        # Try direct navigation to booking URL first (more reliable)
+        try:
+            # Format date without dashes for URL (if needed)
+            formatted_date = target_date.replace('-', '')
+            direct_booking_url = f"https://customer-cc36.clubcaddie.com/booking?date={formatted_date}"
+            logger.info(f"Trying direct booking URL: {direct_booking_url}")
+            
+            await page.goto(direct_booking_url)
+            await page.wait_for_load_state("networkidle")
+            await take_detailed_screenshot(page, "direct_booking_url")
+            
+            # Check if we reached the booking page
+            if "booking" in page.url.lower():
+                logger.info("Direct booking URL successful")
+                return True
+        except Exception as e:
+            logger.info(f"Direct URL failed, falling back to navigation: {str(e)}")
+            # If direct navigation failed, fall back to UI navigation
+            # First ensure we're on the main page
+            await page.goto("https://customer-cc36.clubcaddie.com/")
+            await page.wait_for_load_state("networkidle")
+        
+        # Try UI navigation
         logger.info("Looking for 'Book a Member Tee Time' link")
-        await take_screenshot(page, "before_booking_link")
+        await take_detailed_screenshot(page, "before_booking_link")
         
-        # Use a more flexible selector that should work even with slight text variations
-        booking_link = await page.query_selector("a:text-is('Book a Member Tee Time'), a:text-contains('Book a Member Tee Time')")
+        # Try multiple selector options to find the booking link
+        selectors = [
+            "a:text-is('Book a Member Tee Time')",
+            "a:text-contains('Book a Member Tee Time')",
+            "a:text-contains('Book')",
+            "[class*='booking'], [class*='book-tee']"
+        ]
         
+        booking_link = None
+        for selector in selectors:
+            booking_link = await page.query_selector(selector)
+            if booking_link:
+                logger.info(f"Found booking link with selector: {selector}")
+                break
         if booking_link:
             logger.info("Found 'Book a Member Tee Time' link, clicking to access booking page...")
             await booking_link.click()
@@ -218,7 +276,11 @@ async def search_for_available_slots(page, target_time="14:00"):
     target_minutes = target_time_obj.hour * 60 + target_time_obj.minute
     logger.info(f"Target time in minutes: {target_minutes}")
     
-    await take_screenshot(page, "before_slot_search")
+    # First take a detailed screenshot to help with debugging
+    await take_detailed_screenshot(page, "before_slot_search")
+    
+    # Enable interactive debugging if configured
+    await debug_interactive(page, "Before searching for slots")
     
     try:
         # Look for time patterns like "2:00 PM"
@@ -325,18 +387,44 @@ async def attempt_booking(page, slot_info, player_count=4, dry_run=True):
     """
     logger.info(f"Attempting to book slot: {slot_info['time']} for {player_count} players")
     logger.info(f"Mode: {'DRY RUN' if dry_run else 'LIVE BOOKING'}")
-    await take_screenshot(page, "before_booking_attempt")
+    await take_detailed_screenshot(page, "before_booking_attempt")
+    
+    # Enable interactive debugging if configured
+    await debug_interactive(page, "Before booking attempt")
     
     try:
         # Click on the booking element
         element = slot_info['element']
         logger.info("Clicking on booking element")
-        await element.click()
+        try:
+            # Check if element is still attached to DOM
+            await element.evaluate("el => el.isConnected")
+            await element.click()
+        except Exception as e:
+            logger.warning(f"Error clicking booking element: {str(e)}")
+            logger.info("Attempting to re-find the element")
+            
+            # If element is detached, try to find it again based on time
+            time_text = slot_info['time']
+            logger.info(f"Looking for elements containing time: {time_text}")
+            
+            elements = await page.query_selector_all(f"text={time_text}")
+            if elements:
+                logger.info(f"Found {len(elements)} elements with time text")
+                # Click the first element
+                await elements[0].click()
+            else:
+                logger.error("Could not find booking element")
+                return False
+                
         await page.wait_for_load_state("networkidle")
-        await take_screenshot(page, "after_booking_click")
+        await take_detailed_screenshot(page, "after_booking_click")
         
-        # Check for booking form or dialog
-        form = await page.query_selector("form, [role='dialog'], [class*='modal']")
+        # Wait a moment for any modal dialogs to appear
+        await asyncio.sleep(1)
+        
+        # Check for booking form or dialog with enhanced selectors
+        form = await page.query_selector("form, [role='dialog'], [class*='modal'], [class*='popup'], [class*='drawer'], [id*='booking']")
         if form:
             logger.info("Booking form detected")
             
@@ -391,9 +479,9 @@ async def attempt_booking(page, slot_info, player_count=4, dry_run=True):
         await take_screenshot(page, "booking_error")
         return False
 
-async def book_tee_time(page, target_date, target_time="14:00", player_count=4, dry_run=True):
+async def book_tee_time(page, target_date, target_time="14:00", player_count=4, dry_run=True, max_retries=2):
     """
-    Complete tee time booking process
+    Complete tee time booking process with retry logic
     
     Args:
         page: Playwright page object
@@ -401,28 +489,83 @@ async def book_tee_time(page, target_date, target_time="14:00", player_count=4, 
         target_time: Target time in HH:MM format
         player_count: Number of players to book
         dry_run: If True, simulate booking without completing
+        max_retries: Maximum number of retry attempts
         
     Returns:
         bool: Whether the booking was successful
     """
-    try:
-        # First, navigate to the booking page and set the date
-        if not await navigate_to_booking_page(page, target_date):
-            logger.warning("Could not navigate to booking page properly")
-            # Try using the tee sheet page directly
-            logger.info("Falling back to tee sheet page for booking")
-        
-        # Search for available slots near the target time
-        slot = await search_for_available_slots(page, target_time)
-        
-        if slot:
-            logger.info(f"Found available slot at {slot['time']} - attempting to book")
-            return await attempt_booking(page, slot, player_count, dry_run)
-        else:
-            logger.warning(f"No available slots found near {target_time}")
-            return False
+    for attempt in range(max_retries + 1):
+        try:
+            logger.info(f"Booking attempt {attempt + 1} of {max_retries + 1}")
             
-    except Exception as e:
-        logger.error(f"Error in booking process: {str(e)}")
-        await take_screenshot(page, "booking_process_error")
-        return False
+            # First, navigate to the booking page and set the date
+            nav_success = await navigate_to_booking_page(page, target_date)
+            if not nav_success:
+                logger.warning("Could not navigate to booking page properly")
+                # Try using the tee sheet page directly
+                logger.info("Falling back to tee sheet page for booking")
+                await navigate_to_tee_sheet(page, target_date)
+                await take_detailed_screenshot(page, "tee_sheet_fallback")
+                
+                # Look for direct booking links from the tee sheet
+                book_links = await page.query_selector_all("a:text-contains('Book'), button:text-contains('Book')")
+                if book_links:
+                    logger.info(f"Found {len(book_links)} direct booking links on tee sheet")
+                    await book_links[0].click()
+                    await page.wait_for_load_state("networkidle")
+                
+            # Take detailed screenshot at this point
+            await take_detailed_screenshot(page, f"before_slot_search_attempt_{attempt + 1}")
+            
+            # Search for available slots near the target time
+            slot = await search_for_available_slots(page, target_time)
+            
+            if slot:
+                logger.info(f"Found available slot at {slot['time']} - attempting to book")
+                booking_success = await attempt_booking(page, slot, player_count, dry_run)
+                
+                if booking_success:
+                    logger.info("Booking successful!")
+                    return True
+                else:
+                    logger.warning("Booking attempt failed")
+                    
+                    if attempt < max_retries:
+                        logger.info(f"Retrying booking (attempt {attempt + 1} of {max_retries})")
+                        # Refresh the page before retrying
+                        await page.reload()
+                        await page.wait_for_load_state("networkidle")
+                        await asyncio.sleep(2)  # Wait a moment before next attempt
+                    else:
+                        logger.error("All booking attempts failed")
+                        return False
+            else:
+                logger.warning(f"No available slots found near {target_time} on attempt {attempt + 1}")
+                
+                if attempt < max_retries:
+                    # Try refreshing the page before retrying
+                    logger.info("Refreshing page and retrying")
+                    await page.reload()
+                    await page.wait_for_load_state("networkidle")
+                    await asyncio.sleep(2)  # Wait a moment before next attempt
+                else:
+                    logger.error("Failed to find any available slots after all attempts")
+                    return False
+                
+        except Exception as e:
+            logger.error(f"Error in booking process (attempt {attempt + 1}): {str(e)}")
+            await take_detailed_screenshot(page, f"booking_process_error_attempt_{attempt + 1}")
+            
+            if attempt < max_retries:
+                logger.info(f"Retrying after error (attempt {attempt + 1} of {max_retries})")
+                # Refresh the page before retrying
+                try:
+                    await page.goto("https://customer-cc36.clubcaddie.com/")
+                    await page.wait_for_load_state("networkidle")
+                except Exception as nav_error:
+                    logger.error(f"Navigation error during retry: {str(nav_error)}")
+            else:
+                logger.error("All booking attempts failed")
+                return False
+    
+    return False

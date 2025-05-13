@@ -1,16 +1,20 @@
-# Tea Time ☕⛳
+# Teatime ☕⛳
 
-An automated system to book golf tee times at Rocky Bayou Country Club.
+An automated system to book golf tee times at your country club through the Club Caddie system.
 
 ## Overview
 
-Tea Time automates the process of booking tee times at a golf club when the booking window opens (typically 8 days in advance at midnight). No more setting alarms for midnight bookings!
+Teatime automates the process of booking tee times when the booking window opens (typically 7 days in advance at 6am). No more setting alarms to book your favorite tee times!
 
 ### Key Features
 
-- Automatically book earliest available tee time near 7:30 AM when booking opens
+- Automatically book tee times as soon as the booking window opens
+- Target specific times (e.g., Sunday at 2:00 PM)
 - Support for booking a specific number of players (default: 4)
-- Notifications on booking success or failure
+- Robust retry mechanisms for handling website inconsistencies
+- Detailed logging and screenshots for troubleshooting
+- Comprehensive error handling and reporting
+- Interactive debug mode for development
 - Clean, maintainable code structure for easy updating
 
 ## Project Structure
@@ -82,12 +86,47 @@ CLUB_CADDIE_USERNAME=your_username_here
 CLUB_CADDIE_PASSWORD=your_password_here
 
 # Booking Preferences
-TARGET_TIME=07:30
-PLAYER_COUNT=4
+TARGET_TIME=14:00       # Format: HH:MM in 24-hour time
+PLAYER_COUNT=4          # Number of players to book for (typically 2-4)
 
 # Runtime Mode
-DRY_RUN=true  # Set to false for actual booking
+DRY_RUN=true            # Set to false for actual booking
+
+# Advanced Configuration
+MAX_RETRIES=2           # Number of retry attempts if booking fails
+DEBUG_INTERACTIVE=false # Set to true for interactive debugging mode
+DEBUG_TIMEOUT=30        # Seconds to wait at debug pauses
+WAIT_AFTER_COMPLETION=true  # Whether to wait after completion
+WAIT_TIME=30            # Seconds to wait for manual inspection after completion
 ```
+
+### Features Explained
+
+#### Reliable Booking with Retry Logic
+
+The system implements robust retry mechanisms to handle website inconsistencies and connection issues:
+
+- Automatic retry of failed booking attempts
+- Multiple navigation paths to the booking page
+- Fallback strategies if the primary booking method fails
+- Detailed error handling and reporting
+
+#### Comprehensive Debugging
+
+The system includes features to help you debug issues:
+
+- **Debug Mode**: When `DEBUG_INTERACTIVE=true`, the automation will pause at key points to let you inspect the browser state
+- **Detailed Screenshots**: Full-page screenshots at critical steps in the flow
+- **HTML Dumps**: Saves the HTML content of the page for debugging
+- **JSON Reports**: Detailed logs of each booking attempt stored in `artifacts/reports/`
+
+#### Targeted Time Selection
+
+The system aims to find the tee time closest to your specified target time:
+
+1. Searches available slots around your target time
+2. Ranks them by proximity to your preferred time
+3. Attempts to book the closest available slot
 
 ## Future Enhancements
 
