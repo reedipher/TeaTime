@@ -11,10 +11,10 @@ from datetime import datetime, timedelta
 # Add parent directory to path so we can import our modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from tests.functional.test_base import BaseTestCase, run_test
-from functions.auth import login_to_club_caddie
-from functions.booking import navigate_to_tee_sheet, navigate_to_booking_page
-from utils.date_utils import calculate_target_sunday, calculate_available_dates
+from src.tests.functional.test_base import BaseTestCase, run_test
+from src.functions.auth import login_to_club_caddie
+from src.functions.booking import navigate_to_tee_sheet, navigate_to_booking_page
+from src.utils.date_utils import calculate_target_sunday, calculate_available_dates
 
 class NavigationTest(BaseTestCase):
     """Test case for validating navigation and tee time slot finding"""

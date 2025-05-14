@@ -1,15 +1,8 @@
 # Environment variables
 .env
 
-# Generated artifacts
-artifacts/screenshots/*
-artifacts/logs/*
-screenshots/
-*.log
-
-# Inspector generated files
-login_page_structure.html
-selectors.json
+# Generated artifacts - all artifacts directories
+artifacts/
 
 # Python
 __pycache__/
@@ -38,3 +31,6 @@ venv.bak/
 .idea/
 .vscode/
 *.swp
+
+# Temporary test script
+check_playwright.py

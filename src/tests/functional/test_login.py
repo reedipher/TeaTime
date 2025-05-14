@@ -11,8 +11,8 @@ from datetime import datetime
 # Add parent directory to path so we can import our modules
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from tests.functional.test_base import BaseTestCase, run_test
-from functions.auth import login_to_club_caddie
+from src.tests.functional.test_base import BaseTestCase, run_test
+from src.functions.auth import login_to_club_caddie
 
 class LoginTest(BaseTestCase):
     """Test case for validating Club Caddie login functionality"""

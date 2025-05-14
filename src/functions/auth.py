@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 import logging
 
 # Import utilities
-from ..utils.screenshot import take_screenshot
+from src.utils.screenshot import take_screenshot
 
 # Set up logger
 logger = logging.getLogger("teatime")

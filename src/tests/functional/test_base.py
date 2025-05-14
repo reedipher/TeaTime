@@ -18,8 +18,8 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 # Import our modules
-from utils.logger import setup_logger
-from utils.screenshot import take_detailed_screenshot
+from src.utils.logger import setup_logger
+from src.utils.screenshot import take_detailed_screenshot
 
 class BaseTestCase:
     """Base class for all functional tests"""
