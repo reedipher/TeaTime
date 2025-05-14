@@ -72,7 +72,7 @@ async def navigate_to_tee_sheet(page, target_date=None):
     
     try:
         await page.goto(tee_sheet_url)
-        await page.wait_for_load_state("networkidle")
+        await page.wait_for_load_state("domcontentloaded") # faster than networkidle
     
         logger.info(f"Current URL: {page.url}")
         await take_screenshot(page, "tee_sheet")
@@ -91,29 +91,96 @@ async def navigate_to_booking_page(page, target_date):
         page: Playwright page object
         target_date: Date string in YYYY-MM-DD format
     """
+    # Format date for different uses
+    try:
+        date_obj = datetime.strptime(target_date, "%Y-%m-%d")
+        mm_dd_yyyy = date_obj.strftime("%m/%d/%Y")
+        yyyymmdd = date_obj.strftime("%Y%m%d")
+    except Exception as e:
+        logger.warning(f"Error formatting date {target_date}: {e} - using as provided")
+        yyyymmdd = target_date.replace('-', '')
+        mm_dd_yyyy = target_date  # Best effort
     try:
         # Try direct navigation to booking URL with correct path structure
         formatted_date = target_date.replace('-', '')  # Remove dashes for URL
         
-        # Use the correct URL structure based on the sidebar navigation
-        direct_booking_url = f"https://customer-cc36.clubcaddie.com/TeeTimes/view/cbfdabab?date={formatted_date}"
+        # Use the fully correct URL structure with proper date formatting and parameters
+        # Format date as MM/DD/YYYY for URL
+        try:
+            date_obj = datetime.strptime(target_date, "%Y-%m-%d")
+            mm_dd_yyyy = date_obj.strftime("%m/%d/%Y")
+            # URL encode the slashes
+            url_date = mm_dd_yyyy.replace("/", "%2F") 
+        except Exception as e:
+            logger.warning(f"Error formatting date {target_date}: {e} - using fallback format")
+            url_date = formatted_date
+            
+        direct_booking_url = f"https://customer-cc36.clubcaddie.com/TeeTimes/view/cbfdabab/slots?date={url_date}&player=1&ratetype=any"
         logger.info(f"Trying direct booking URL: {direct_booking_url}")
         
         await page.goto(direct_booking_url)
-        await page.wait_for_load_state("networkidle")
+        await page.wait_for_load_state("domcontentloaded") # faster than networkidle
         await take_detailed_screenshot(page, "direct_booking_url")
         
         # Check if we reached the booking page
         if "TeeTimes" in page.url:
+            # Log page details to debug date issues
+            page_info = await page.evaluate("""
+                () => {
+                    return {
+                        url: window.location.href,
+                        title: document.title,
+                        elementCounts: {
+                            buttons: document.querySelectorAll('button').length,
+                            links: document.querySelectorAll('a').length,
+                            forms: document.querySelectorAll('form').length,
+                            inputs: document.querySelectorAll('input').length,
+                            selects: document.querySelectorAll('select').length
+                        }
+                    };
+                }
+            """)
+            logger.info(f"Page info for direct_booking_url: {json.dumps(page_info)}")
+            
+            # Store the HTML content using absolute paths
+            html_content = await page.content()
+            import os
+            from pathlib import Path
+            # Get the project root directory
+            project_root = Path(__file__).parents[2].absolute()
+            html_dir = project_root / "artifacts" / "html"
+            os.makedirs(html_dir, exist_ok=True)
+            html_path = html_dir / "direct_booking_url.html"
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(html_content)
+            logger.info(f"HTML content saved to {html_path}")
+            
+            # Try to set the date again using UI controls
+            try:
+                # Look for date input or selector
+                date_input = await page.query_selector('input[type="date"], [name*="date"], [id*="date"]')
+                if date_input:
+                    logger.info(f"Found date input, trying to set date to {mm_dd_yyyy}")
+                    await date_input.fill(mm_dd_yyyy)
+                    
+                    # Look for an update/refresh button
+                    update_btn = await page.query_selector('button:has-text("Update"), button:has-text("Go"), input[type="submit"]')
+                    if update_btn:
+                        logger.info("Found update button, clicking to refresh with new date")
+                        await update_btn.click()
+                        await page.wait_for_load_state("domcontentloaded") # faster than networkidle
+            except Exception as e:
+                logger.warning(f"Error trying to set date via UI: {str(e)}")
+            
             logger.info("Direct booking URL successful")
             return True
             
         # If the first structure failed, try the alternate URL format
-        alternate_booking_url = f"https://customer-cc36.clubcaddie.com/TeeTimes/booking/cbfdabab?date={formatted_date}"
+        alternate_booking_url = f"https://customer-cc36.clubcaddie.com/TeeTimes/booking/cbfdabab/slots?date={url_date}&player=1&ratetype=any"
         logger.info(f"Trying alternate booking URL: {alternate_booking_url}")
         
         await page.goto(alternate_booking_url)
-        await page.wait_for_load_state("networkidle")
+        await page.wait_for_load_state("domcontentloaded") # faster than networkidle
         await take_detailed_screenshot(page, "alternate_booking_url")
         
         if "TeeTimes" in page.url:
@@ -143,7 +210,7 @@ async def navigate_to_booking_page(page, target_date):
         if booking_link:
             logger.info("Found 'Book a Member Tee Time' link, clicking to access booking page...")
             await booking_link.click()
-            await page.wait_for_load_state("networkidle")
+            await page.wait_for_load_state("domcontentloaded") # faster than networkidle
             await take_screenshot(page, "after_booking_link")
             return True
         else:
@@ -158,13 +225,13 @@ async def navigate_to_booking_page(page, target_date):
             submit_btn = await forms[0].query_selector("button[type='submit'], input[type='submit']")
             if submit_btn:
                 await submit_btn.click()
-                await page.wait_for_load_state("networkidle")
+                await page.wait_for_load_state("domcontentloaded") # faster than networkidle
                 await take_screenshot(page, "after_form_submit")
                 return True
             else:
                 logger.info("No submit button found, trying to submit the form directly")
                 await page.evaluate("document.getElementById('TeeSheetForm0').submit()")
-                await page.wait_for_load_state("networkidle")
+                await page.wait_for_load_state("domcontentloaded") # faster than networkidle
                 await take_screenshot(page, "after_form_submit_js")
                 return True
     except Exception as e:
@@ -259,10 +326,8 @@ async def search_for_available_slots(page, target_time="14:00"):
     target_minutes = target_time_obj.hour * 60 + target_time_obj.minute
     logger.info(f"Target time in minutes: {target_minutes}")
     
-    # First take a detailed screenshot to help with debugging
-    await take_detailed_screenshot(page, "before_slot_search")
-    
-    # Enable interactive debugging if configured
+    # Quick screenshot and debug - optimized for performance
+    await take_screenshot(page, "before_slot_search")
     await debug_interactive(page, "Before searching for slots")
     
     try:
@@ -285,20 +350,10 @@ async def search_for_available_slots(page, target_time="14:00"):
                 logger.info(f"Row {i+1} contains time: {time_text} ({minutes} minutes)")
                 
                 # Check if this row appears to be an available slot (not booked)
-                is_available = await page.evaluate("""
-                    (row) => {
-                        // Available slots usually have booking buttons or are clickable
-                        const hasBookButton = row.querySelector('button, a[href*="book"], [class*="book"]');
-                        const rowText = row.textContent.trim();
-                        
-                        // Usually booked slots mention names or have "booked" status
-                        const hasNames = rowText.length > 15 && 
-                                       !rowText.includes("Available") &&
-                                       !rowText.includes("Book");
-                                       
-                        return hasBookButton || !hasNames;
-                    }
-                """, row)
+                # Use a simpler check - faster performance
+                book_elements = await row.query_selector_all('button, a')
+                text = await row.text_content()
+                is_available = (len(book_elements) > 0) or ("Available" in text or "Book" in text)
                 
                 if is_available:
                     # This row might contain an available slot
@@ -391,7 +446,7 @@ async def attempt_booking(page, slot_info, player_count=4, dry_run=True):
             else:
                 # Submit the form
                 await page.evaluate(f"document.getElementById('{form_id}').submit()")
-                await page.wait_for_load_state("networkidle")
+                await page.wait_for_load_state("domcontentloaded") # faster than networkidle
                 await take_detailed_screenshot(page, "after_form_submit")
         else:
             # It's a regular element, click on it
@@ -421,7 +476,7 @@ async def attempt_booking(page, slot_info, player_count=4, dry_run=True):
                 return False
                 
         # After form submission or element click, look for the booking form
-        await page.wait_for_load_state("networkidle")
+        await page.wait_for_load_state("domcontentloaded") # faster than networkidle
         await take_detailed_screenshot(page, "after_booking_action")
         
         # Wait a moment for any modal dialogs to appear
@@ -468,7 +523,7 @@ async def attempt_booking(page, slot_info, player_count=4, dry_run=True):
             if book_button:
                 logger.info("Clicking final booking button")
                 await book_button.click()
-                await page.wait_for_load_state("networkidle")
+                await page.wait_for_load_state("domcontentloaded") # faster than networkidle
                 await take_screenshot(page, "booking_complete")
                 
                 # Look for confirmation
@@ -735,7 +790,7 @@ async def book_tee_time(page, target_date, target_time=None, player_count=None, 
                 # Refresh the page before retrying
                 try:
                     await page.goto("https://customer-cc36.clubcaddie.com/")
-                    await page.wait_for_load_state("networkidle")
+                    await page.wait_for_load_state("domcontentloaded") # faster than networkidle
                 except Exception as nav_error:
                     logger.error(f"Navigation error during retry: {str(nav_error)}")
             else:

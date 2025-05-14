@@ -2,9 +2,13 @@
 import os
 import json
 import logging
+from pathlib import Path
 
 # Set up logger
 logger = logging.getLogger("teatime")
+
+# Define the project root
+PROJECT_ROOT = Path(__file__).parents[2].absolute()
 
 # Global counter for screenshots
 screenshot_counter = 0
@@ -23,11 +27,12 @@ async def take_screenshot(page, name):
     global screenshot_counter
     screenshot_counter += 1
     
-    # Create screenshots directory if it doesn't exist
-    os.makedirs("artifacts/screenshots", exist_ok=True)
+    # Create screenshots directory with absolute path
+    screenshot_dir = PROJECT_ROOT / "artifacts" / "screenshots"
+    os.makedirs(screenshot_dir, exist_ok=True)
     
     # Create filename with zero-padded counter
-    filename = f"artifacts/screenshots/{screenshot_counter:02d}_{name}.png"
+    filename = str(screenshot_dir / f"{screenshot_counter:02d}_{name}.png")
     
     # Take the screenshot
     await page.screenshot(path=filename)
@@ -50,12 +55,12 @@ async def take_detailed_screenshot(page, name):
     screenshot_path = await take_screenshot(page, name)
     
     try:
-        # Create HTML directory if it doesn't exist
-        html_dir = "artifacts/html"
+        # Create HTML directory with absolute path
+        html_dir = PROJECT_ROOT / "artifacts" / "html"
         os.makedirs(html_dir, exist_ok=True)
         
         # Save HTML content
-        html_path = f"{html_dir}/{screenshot_counter:02d}_{name}.html"
+        html_path = str(html_dir / f"{screenshot_counter:02d}_{name}.html")
         html_content = await page.content()
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html_content)
@@ -77,10 +82,10 @@ async def take_detailed_screenshot(page, name):
             }
         }""")
         
-        # Save page info
-        info_dir = "artifacts/debug_info"
+        # Save page info with absolute path
+        info_dir = PROJECT_ROOT / "artifacts" / "debug_info"
         os.makedirs(info_dir, exist_ok=True)
-        info_path = f"{info_dir}/{screenshot_counter:02d}_{name}.json"
+        info_path = str(info_dir / f"{screenshot_counter:02d}_{name}.json")
         with open(info_path, "w") as f:
             json.dump(page_info, f, indent=2)
         

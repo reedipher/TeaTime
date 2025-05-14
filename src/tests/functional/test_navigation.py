@@ -189,8 +189,17 @@ class NavigationTest(BaseTestCase):
             target_date = (today + timedelta(days=7)).strftime("%Y-%m-%d")
             target_date_formatted = target_date.replace('-', '')
             
-            # Direct booking URL
-            booking_url = f"https://customer-cc36.clubcaddie.com/booking?date={target_date_formatted}"
+            # Format the date correctly for the URL (MM/DD/YYYY with URL encoding)
+            try:
+                date_obj = datetime.strptime(target_date, "%Y-%m-%d")
+                mm_dd_yyyy = date_obj.strftime("%m/%d/%Y")
+                url_date = mm_dd_yyyy.replace("/", "%2F")
+            except Exception as e:
+                self.logger.warning(f"Error formatting date: {str(e)}, using fallback format")
+                url_date = target_date_formatted
+                
+            # Direct booking URL using correct format and parameters
+            booking_url = f"https://customer-cc36.clubcaddie.com/TeeTimes/view/cbfdabab/slots?date={url_date}&player=1&ratetype=any"
             self.logger.info(f"Navigating directly to booking URL: {booking_url}")
             
             # Navigate to the URL
@@ -200,8 +209,8 @@ class NavigationTest(BaseTestCase):
             current_url = self.page.url
             self.logger.info(f"Current URL after direct navigation: {current_url}")
             
-            # Wait for page to stabilize
-            await asyncio.sleep(2)
+            # Wait briefly for page to settle - reduced to improve performance
+            await asyncio.sleep(0.5)
             
             # Take screenshot of the result
             screenshot_path = await self._take_screenshot("direct_url_result")
@@ -280,11 +289,11 @@ class NavigationTest(BaseTestCase):
                 # Take screenshot with highlight
                 await self._take_screenshot(f"slot_{i+1}_highlight")
                 
-                # Remove highlight
-                await self.page.evaluate("""(element, original) => {
-                    element.style.backgroundColor = original.originalBackground;
-                    element.style.border = original.originalBorder;
-                }""", slot["element"], {"originalBackground": "", "originalBorder": ""})
+                # Remove highlight - pass arguments as a single object
+                await self.page.evaluate("""(args) => {
+                    args.element.style.backgroundColor = args.original.originalBackground;
+                    args.element.style.border = args.original.originalBorder;
+                }""", {"element": slot["element"], "original": {"originalBackground": "", "originalBorder": ""}})
             
             # Update step status
             self._update_step_status(step_id, "success", {
@@ -328,28 +337,71 @@ class NavigationTest(BaseTestCase):
             self.logger.error(f"Error analyzing tee sheet: {str(e)}")
             return {"error": str(e)}
             
+    async def _extract_date_from_page(self):
+        """Extract the current date from the page"""
+        try:
+            # Try to extract date from URL params
+            url = self.page.url
+            date_param = None
+            if "date=" in url:
+                param_part = url.split("date=")[1]
+                if "&" in param_part:
+                    date_param = param_part.split("&")[0]
+                else:
+                    date_param = param_part
+                    
+                # Format could be YYYYMMDD or MM%2FDD%2FYYYY
+                if len(date_param) == 8 and date_param.isdigit():
+                    # YYYYMMDD format
+                    year = date_param[:4]
+                    month = date_param[4:6]
+                    day = date_param[6:8]
+                    return f"{year}-{month}-{day}"
+                elif "%2F" in date_param:
+                    # MM%2FDD%2FYYYY format
+                    parts = date_param.split("%2F")
+                    if len(parts) == 3:
+                        month, day, year = parts
+                        return f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+            
+            # Try to extract from page content
+            date_text = await self.page.evaluate("""
+                () => {
+                    // Look for date selectors or display elements
+                    const dateElements = document.querySelectorAll('[type="date"], [class*="date"], [id*="date"], h1, h2');
+                    for (const el of dateElements) {
+                        const text = el.textContent || el.value;
+                        if (text && /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(text)) {
+                            return text.trim();
+                        }
+                        if (el.getAttribute && el.getAttribute('value') && 
+                            /\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/.test(el.getAttribute('value'))) {
+                            return el.getAttribute('value').trim();
+                        }
+                    }
+                    return null;
+                }
+            """)
+            
+            if date_text:
+                self.logger.info(f"Found date text on page: {date_text}")
+                # TODO: Parse this date_text into a YYYY-MM-DD format
+                return date_text
+                
+            return None
+        except Exception as e:
+            self.logger.error(f"Error extracting date from page: {str(e)}")
+            return None
+    
     async def _analyze_booking_page(self):
         """Analyze booking page structure"""
         try:
-            # Extract key information from the booking page
+            # Extract minimal information from the booking page (more efficient)
             booking_info = await self.page.evaluate("""() => {
-                // Check for date selection elements
-                const dateElements = document.querySelectorAll('[type="date"], [class*="date"], [class*="calendar"]');
-                
-                // Check for time selection elements
-                const timeElements = document.querySelectorAll('[class*="time"], [id*="time"], [data-time]');
-                
-                // Check for player/golfer count elements
-                const playerElements = document.querySelectorAll(
-                    'select[name*="player"], select[name*="golfer"], input[name*="player"], input[name*="golfer"]'
-                );
-                
                 return {
-                    dateElementCount: dateElements.length,
-                    timeElementCount: timeElements.length,
-                    playerElementCount: playerElements.length,
                     pageTitle: document.title,
-                    bodyText: document.body.innerText.substring(0, 200) + '...' // First 200 chars
+                    url: window.location.href,
+                    hasDatePicker: document.querySelector('[type="date"], [class*="date"]') !== null
                 };
             }""")
             
