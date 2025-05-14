@@ -14,9 +14,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 
 from src.tests.functional.test_base import BaseTestCase, run_test
 from src.functions.auth import login_to_club_caddie
-# Import the enhanced booking module instead of the original one
-from src.functions.booking_enhanced import navigate_to_tee_sheet, navigate_to_booking_page, book_tee_time
-from src.functions.booking_enhanced import find_tee_time_slots_on_tee_sheet, attempt_booking
+from src.functions.booking import navigate_to_tee_sheet, navigate_to_booking_page, book_tee_time
+from src.functions.booking import find_tee_time_slots_on_tee_sheet, attempt_booking
 from src.utils.date_utils import calculate_target_day, calculate_available_dates
 
 class BookingFlowTest(BaseTestCase):

@@ -535,7 +535,7 @@ async def attempt_booking(page, slot_info, player_count=4, dry_run=True):
 
 async def find_tee_time_slots_on_tee_sheet(page, target_time="14:00"):
     """
-    Find available tee time slots directly on the tee sheet page
+    Find available tee time slots on either the tee sheet or booking page view
     
     Args:
         page: Playwright page object
@@ -544,7 +544,7 @@ async def find_tee_time_slots_on_tee_sheet(page, target_time="14:00"):
     Returns:
         list: List of available slots with details, sorted by proximity to target time
     """
-    logger.info(f"Searching for tee time slots near {target_time} on tee sheet...")
+    logger.info(f"Searching for tee time slots near {target_time}...")
     target_time_obj = datetime.strptime(target_time, "%H:%M")
     target_minutes = target_time_obj.hour * 60 + target_time_obj.minute
     
@@ -554,122 +554,288 @@ async def find_tee_time_slots_on_tee_sheet(page, target_time="14:00"):
     # Enable interactive debugging if configured
     await debug_interactive(page, "Before searching for tee time slots")
     
+    # Add additional wait time for page to fully load, especially for booking view
+    if "TeeTimes" in page.url:
+        logger.info("Booking view detected - adding extra wait time for page to stabilize")
+        await asyncio.sleep(2)  # Give booking page extra time to load completely
+        
+        # Wait for key elements that indicate the page is ready
+        try:
+            await page.wait_for_selector(".teetime-card, .time-slot, [class*='time'], [class*='slot'], [role='button'], tr, button", timeout=5000)
+            logger.info("Key page elements found, page appears to be ready")
+        except Exception as e:
+            logger.warning(f"Timed out waiting for key elements, but will attempt to find slots anyway: {str(e)}")
+    
+    # Determine which view we're on (tee sheet or booking page)
+    current_url = page.url
+    is_booking_view = "TeeTimes/view" in current_url or "TeeTimes/booking" in current_url
+    is_tee_sheet_view = "TeeSheet/view" in current_url
+    
+    logger.info(f"Detected view: {'Booking View' if is_booking_view else 'Tee Sheet View' if is_tee_sheet_view else 'Unknown View'}")
+    
+    # Capture the HTML structure for better diagnostics
+    html_structure = await page.evaluate("""
+    () => {
+        // Create a simple HTML element counter
+        const getElementCounts = () => {
+            return {
+                forms: document.querySelectorAll('form').length,
+                buttons: document.querySelectorAll('button').length,
+                links: document.querySelectorAll('a').length,
+                tables: document.querySelectorAll('table').length,
+                trs: document.querySelectorAll('tr').length,
+                divs: document.querySelectorAll('div').length
+            };
+        };
+        
+        // Check for common time/slot related elements
+        const getTimeElementInfo = () => {
+            const timeElements = {
+                timeCards: document.querySelectorAll('[class*="time"]').length,
+                slotElements: document.querySelectorAll('[class*="slot"]').length,
+                teeTimeElements: document.querySelectorAll('[class*="tee-time"]').length,
+                bookingElements: document.querySelectorAll('button, a').length
+            };
+            return timeElements;
+        };
+        
+        return {
+            url: window.location.href,
+            title: document.title,
+            elementCounts: getElementCounts(),
+            timeElements: getTimeElementInfo()
+        };
+    }
+    """)
+    
+    logger.info(f"Page structure: {json.dumps(html_structure)}")
+    
     available_slots = []
     time_pattern = re.compile(r'\d{1,2}:\d{2}\s*[AP]M', re.IGNORECASE)
     
     try:
-        # Extract the form data which contains the tee time information
-        forms = await page.query_selector_all("form[id*='TeeSheetForm']")
-        logger.info(f"Found {len(forms)} tee time forms")
-        
-        for i, form in enumerate(forms):
-            # Extract time from the form
-            time_elem = await form.query_selector(".slotTime b")
-            if time_elem:
-                time_text = await time_elem.text_content()
-                time_text = time_text.strip()
-                minutes = await parse_time(time_text)
-                logger.info(f"Form {i+1} contains time: {time_text}")
-                
-                # Check if this slot is available by looking for green boxes without names
-                # or any booking elements
-                
-                # Method 1: Check for forms that allow submission (these should be bookable)
-                is_bookable = await form.evaluate("""form => {
-                    // Check for "Book" buttons in the form
-                    const bookButton = form.querySelector('button[type="submit"], [type="submit"]');
-                    const bookTextButton = Array.from(form.querySelectorAll('button')).find(btn => 
-                        btn.textContent.toLowerCase().includes('book') || btn.textContent.toLowerCase().includes('reserve')
-                    );
-                    
-                    if (bookButton || bookTextButton) return true;
-                    
-                    // Check slot status - non-green might be available
-                    const slots = Array.from(form.querySelectorAll('.slot-box'));
-                    const availableSlots = slots.filter(slot => 
-                        !slot.classList.contains('Green') &&
-                        !slot.classList.contains('Grey') &&
-                        !slot.classList.contains('Event') &&
-                        !slot.textContent.trim() // Empty slots are potentially available
-                    );
-                    
-                    return availableSlots.length > 0;
-                }""")
-                
-                if is_bookable:
-                    logger.info(f"Form {i+1} with time {time_text} appears to be bookable")
-                    
-                    # Set up the slot data
-                    available_slots.append({
-                        'element': form,  # Use the form itself as the element to click
-                        'time': time_text,
-                        'minutes': minutes,
-                        'distance': abs(minutes - target_minutes) if minutes else 9999,
-                        'form_id': await form.get_attribute('id')
-                    })
-                else:
-                    logger.debug(f"Form {i+1} with time {time_text} doesn't appear to be bookable")
+        if is_tee_sheet_view:
+            # ===== TEE SHEET VIEW LOGIC =====
+            # Extract the form data which contains the tee time information
+            forms = await page.query_selector_all("form[id*='TeeSheetForm']")
+            logger.info(f"Found {len(forms)} tee time forms")
             
-        # If we found slots, sort them by distance to target time
+            for i, form in enumerate(forms):
+                # Extract time from the form
+                time_elem = await form.query_selector(".slotTime b")
+                if time_elem:
+                    time_text = await time_elem.text_content()
+                    time_text = time_text.strip()
+                    minutes = await parse_time(time_text)
+                    logger.info(f"Form {i+1} contains time: {time_text}")
+                    
+                    # Check if this slot is available by looking for green boxes without names
+                    # or any booking elements
+                    
+                    # Method 1: Check for forms that allow submission (these should be bookable)
+                    is_bookable = await form.evaluate("""form => {
+                        // Check for "Book" buttons in the form
+                        const bookButton = form.querySelector('button[type="submit"], [type="submit"]');
+                        const bookTextButton = Array.from(form.querySelectorAll('button')).find(btn => 
+                            btn.textContent.toLowerCase().includes('book') || btn.textContent.toLowerCase().includes('reserve')
+                        );
+                        
+                        if (bookButton || bookTextButton) return true;
+                        
+                        // Check slot status - non-green might be available
+                        const slots = Array.from(form.querySelectorAll('.slot-box'));
+                        const availableSlots = slots.filter(slot => 
+                            !slot.classList.contains('Green') &&
+                            !slot.classList.contains('Grey') &&
+                            !slot.classList.contains('Event') &&
+                            !slot.textContent.trim() // Empty slots are potentially available
+                        );
+                        
+                        return availableSlots.length > 0;
+                    }""")
+                    
+                    if is_bookable:
+                        logger.info(f"Form {i+1} with time {time_text} appears to be bookable")
+                        
+                        # Set up the slot data
+                        available_slots.append({
+                            'element': form,  # Use the form itself as the element to click
+                            'time': time_text,
+                            'minutes': minutes,
+                            'distance': abs(minutes - target_minutes) if minutes else 9999,
+                            'form_id': await form.get_attribute('id')
+                        })
+                    else:
+                        logger.debug(f"Form {i+1} with time {time_text} doesn't appear to be bookable")
+        
+        elif is_booking_view:
+            # ===== BOOKING VIEW LOGIC =====
+            logger.info("Detecting slots in booking view")
+            
+            # Attempt to wait for content to fully render (account for any AJAX content)
+            try:
+                # Look for any interactive elements or time displays
+                await page.wait_for_selector(
+                    ".teetime-card, .time-slot, [class*='time'], [class*='slot'], button:visible", 
+                    timeout=5000,
+                    state="visible"  # Wait until elements are visible, not just in DOM
+                )
+                logger.info("Interactive elements appear to be loaded")
+            except Exception as e:
+                logger.warning(f"Waiting for interactive elements timed out: {str(e)}")
+                # Continue anyway - will try alternative approaches
+            
+            # Strategy 1: Look for time cards/panels that have booking elements
+            time_cards = await page.query_selector_all(".teetime-card, .time-slot, [class*='time'], [class*='slot'], [class*='tee-time']")
+            logger.info(f"Found {len(time_cards)} potential time cards/panels")
+            
+            for i, card in enumerate(time_cards):
+                card_text = await card.text_content()
+                time_match = time_pattern.search(card_text)
+                
+                if time_match:
+                    time_text = time_match.group(0)
+                    minutes = await parse_time(time_text)
+                    logger.info(f"Time card {i+1} contains time: {time_text}")
+                    
+                    # Check if bookable by looking for book buttons or indicators
+                    book_button = await card.query_selector("button, a")
+                    if book_button:
+                        button_text = await book_button.text_content()
+                        logger.info(f"Found potential booking button with text: {button_text}")
+                        
+                        is_bookable = "book" in button_text.lower() or "reserve" in button_text.lower()
+                        if is_bookable:
+                            logger.info(f"Time card with time {time_text} appears to be bookable")
+                            available_slots.append({
+                                'element': book_button,
+                                'time': time_text,
+                                'minutes': minutes,
+                                'distance': abs(minutes - target_minutes) if minutes else 9999,
+                                'is_button': True
+                            })
+            
+            # Strategy 2: Look for time texts that are near booking buttons
+            if not available_slots:
+                logger.info("No slots found with card approach, trying button-based approach")
+                book_buttons = await page.query_selector_all("button, a")
+                
+                for i, button in enumerate(book_buttons):
+                    button_text = await button.text_content()
+                    
+                    if "book" in button_text.lower() or "reserve" in button_text.lower():
+                        logger.info(f"Found booking button {i+1}")
+                        
+                        # Look for time near this button - check parent containers
+                        time_text = await button.evaluate("""btn => {
+                            // Try to find the time in the parent containers
+                            let parent = btn.parentElement;
+                            let maxDepth = 5; // Don't go too far up the tree
+                            let timeRegex = /\\d{1,2}:\\d{2}\\s*[AP]M/i;
+                            
+                            while (parent && maxDepth > 0) {
+                                if (parent.textContent.match(timeRegex)) {
+                                    const match = parent.textContent.match(timeRegex);
+                                    return match ? match[0].trim() : null;
+                                }
+                                parent = parent.parentElement;
+                                maxDepth--;
+                            }
+                            return null;
+                        }""")
+                        
+                        if time_text:
+                            minutes = await parse_time(time_text)
+                            logger.info(f"Button {i+1} associated with time: {time_text}")
+                            
+                            available_slots.append({
+                                'element': button,
+                                'time': time_text,
+                                'minutes': minutes,
+                                'distance': abs(minutes - target_minutes) if minutes else 9999,
+                                'is_button': True
+                            })
+                
+                # Strategy 3: Look for any clickable elements that have time text
+                if not available_slots:
+                    logger.info("No slots found with button approach, trying general element approach")
+                    all_elements = await page.query_selector_all("a, button, [onclick], [class*='clickable'], [class*='slot'], [role='button']")
+                    
+                    for i, elem in enumerate(all_elements):
+                        elem_text = await elem.text_content()
+                        time_match = time_pattern.search(elem_text)
+                        
+                        if time_match:
+                            time_text = time_match.group(0)
+                            minutes = await parse_time(time_text)
+                            
+                            # Check if this element appears to be a booking element
+                            is_likely_booking = (
+                                "book" in elem_text.lower() or
+                                "reserve" in elem_text.lower() or
+                                "select" in elem_text.lower() or
+                                "available" in elem_text.lower()
+                            )
+                            
+                            if is_likely_booking:
+                                logger.info(f"Element {i+1} with time {time_text} appears to be bookable")
+                                available_slots.append({
+                                    'element': elem,
+                                    'time': time_text,
+                                    'minutes': minutes,
+                                    'distance': abs(minutes - target_minutes) if minutes else 9999,
+                                })
+        else:
+            # Generic approach for unknown view
+            logger.info("Unknown view type, using generic slot detection approach")
+            # Try the fallback method from original code
+            book_buttons = await page.query_selector_all("button, a")
+            book_buttons = [
+                btn for btn in book_buttons 
+                if await btn.evaluate("el => el.textContent.toLowerCase().includes('book')")
+            ]
+            
+            if book_buttons:
+                logger.info(f"Found {len(book_buttons)} potential 'Book' buttons")
+                
+                # For each booking button, try to find the associated time
+                for i, button in enumerate(book_buttons):
+                    # Look at parent containers to find the time
+                    time_text = await button.evaluate("""btn => {
+                        // Try to find the time in the parent containers
+                        let parent = btn.parentElement;
+                        let maxDepth = 5; // Don't go too far up the tree
+                        let timeRegex = /\\d{1,2}:\\d{2}\\s*[AP]M/i;
+                        
+                        while (parent && maxDepth > 0) {
+                            if (parent.textContent.match(timeRegex)) {
+                                const match = parent.textContent.match(timeRegex);
+                                return match ? match[0].trim() : null;
+                            }
+                            parent = parent.parentElement;
+                            maxDepth--;
+                        }
+                        return null;
+                    }""")
+                    
+                    if time_text:
+                        minutes = await parse_time(time_text)
+                        logger.info(f"Button {i+1} associated with time: {time_text}")
+                        
+                        available_slots.append({
+                            'element': button,
+                            'time': time_text,
+                            'minutes': minutes,
+                            'distance': abs(minutes - target_minutes) if minutes else 9999,
+                            'is_button': True
+                        })
+        
+        # Sort and return if we found any slots
         if available_slots:
             available_slots.sort(key=lambda x: x['distance'])
             
-            # Log the best options
             for i, slot in enumerate(available_slots[:5]):
                 logger.info(f"Available slot {i+1}: {slot['time']} (distance from target: {slot['distance']} mins)")
-            
-            return available_slots
-        
-        # If no slots were found, try an alternate method - looking for "Book" buttons
-        logger.info("No slots found with primary approach, trying fallback approach")
-        # Find buttons with text containing 'Book'
-        book_buttons = await page.query_selector_all("button, a")
-        book_buttons = [
-            btn for btn in book_buttons 
-            if await btn.evaluate("el => el.textContent.toLowerCase().includes('book')")
-        ]
-        
-        if book_buttons:
-            logger.info(f"Found {len(book_buttons)} potential 'Book' buttons")
-            
-            # For each booking button, try to find the associated time
-            for i, button in enumerate(book_buttons):
-                # Look at parent containers to find the time
-                time_text = await button.evaluate("""btn => {
-                    // Try to find the time in the parent containers
-                    let parent = btn.parentElement;
-                    let maxDepth = 5; // Don't go too far up the tree
-                    let timeRegex = /\\d{1,2}:\\d{2}\\s*[AP]M/i;
-                    
-                    while (parent && maxDepth > 0) {
-                        if (parent.textContent.match(timeRegex)) {
-                            const match = parent.textContent.match(timeRegex);
-                            return match ? match[0].trim() : null;
-                        }
-                        parent = parent.parentElement;
-                        maxDepth--;
-                    }
-                    return null;
-                }""")
-                
-                if time_text:
-                    minutes = await parse_time(time_text)
-                    logger.info(f"Button {i+1} associated with time: {time_text}")
-                    
-                    available_slots.append({
-                        'element': button,
-                        'time': time_text,
-                        'minutes': minutes,
-                        'distance': abs(minutes - target_minutes) if minutes else 9999,
-                        'is_button': True
-                    })
-        
-        # Sort and return if we found any slots with the alternate approach
-        if available_slots:
-            available_slots.sort(key=lambda x: x['distance'])
-            
-            for i, slot in enumerate(available_slots[:5]):
-                logger.info(f"Fallback approach - available slot {i+1}: {slot['time']} (distance from target: {slot['distance']} mins)")
             
             return available_slots
             
