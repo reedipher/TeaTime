@@ -6,10 +6,14 @@ This document provides guidance on setting up and managing credentials for the T
 
 ### Setting Up Your .env File
 
-1. Copy the template configuration file:
+1. Copy the template configuration file (two options):
 
 ```bash
+# Option 1: Create .env in project root (recommended)
 cp config/.env.example .env
+
+# Option 2: Create .env in config directory
+cp config/.env.example config/.env
 ```
 
 2. Edit the `.env` file with your Club Caddie credentials:

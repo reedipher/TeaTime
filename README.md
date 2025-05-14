@@ -72,8 +72,13 @@ python src/tests/install_dependencies.py
 Copy the template and fill in your details:
 
 ```bash
+# Option 1: Create .env in project root (recommended)
 cp config/.env.example .env
 # Edit .env with your credentials and preferences
+
+# Option 2: Create .env in config directory
+cp config/.env.example config/.env
+# Edit config/.env with your credentials and preferences
 ```
 
 5. Run a test booking flow (always runs in dry-run mode)

@@ -11,8 +11,6 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
-from dotenv import load_dotenv
-
 # Add parent directory to path so we can import our modules
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -52,8 +50,7 @@ class BaseTestCase:
         )
         self.logger.info(f"Starting test: {test_name}")
         
-        # Load environment variables
-        load_dotenv()
+        # Configuration loading is handled by config_loader
         self._load_config()
         
         # Instance variables to be set up during test
@@ -63,18 +60,37 @@ class BaseTestCase:
         self.playwright = None
         
     def _load_config(self):
-        """Load configuration from environment variables"""
+        """Load configuration from config_loader"""
+        # Import config_loader here to avoid circular imports
+        from src.utils.config_loader import get_value, get_booking_config, get_runtime_config, get_debug_config, get_system_config, get_credentials
+        
+        credentials = get_credentials()
+        booking_config = get_booking_config()
+        runtime_config = get_runtime_config()
+        debug_config = get_debug_config()
+        system_config = get_system_config()
+        
         self.config = {
-            "dry_run": os.getenv("DRY_RUN", "true").lower() == "true",
-            "target_time": os.getenv("TARGET_TIME", "14:00"),
-            "player_count": int(os.getenv("PLAYER_COUNT", "4")),
-            "club_caddie_username": os.getenv("CLUB_CADDIE_USERNAME"),
-            "club_caddie_password": os.getenv("CLUB_CADDIE_PASSWORD"),
-            "debug_interactive": os.getenv("DEBUG_INTERACTIVE", "false").lower() == "true",
-            "debug_timeout": int(os.getenv("DEBUG_TIMEOUT", "30")),
-            "max_retries": int(os.getenv("MAX_RETRIES", "2")),
-            "booking_window_days": int(os.getenv("BOOKING_WINDOW_DAYS", "7")),
+            # Runtime config
+            "dry_run": runtime_config.get("dry_run", True),
+            "max_retries": runtime_config.get("max_retries", 2),
+            
+            # Booking config
+            "target_time": booking_config.get("target_time", "14:00"),
+            "player_count": booking_config.get("player_count", 4),
+            
+            # Credentials
+            "club_caddie_username": credentials.get("club_caddie_username"),
+            "club_caddie_password": credentials.get("club_caddie_password"),
+            
+            # Debug config
+            "debug_interactive": debug_config.get("interactive", False),
+            "debug_timeout": debug_config.get("timeout", 30),
+            
+            # System config
+            "booking_window_days": system_config.get("booking_window_days", 7),
         }
+        
         # Record config in results (but remove sensitive data)
         self.results["config"] = {k: v for k, v in self.config.items() 
                                 if k not in ["club_caddie_username", "club_caddie_password"]}
@@ -237,7 +253,12 @@ class BaseTestCase:
     async def debug_pause(self, message: str = "Debug pause"):
         """Pause for debugging if enabled"""
         if self.config["debug_interactive"]:
-            self.logger.info(f"DEBUG PAUSE: {message} - will continue in {self.config['debug_timeout']} seconds...")
+            # Make the pause more visible in the console
+            self.logger.info(f"\n\n==== DEBUG PAUSE: {message} ====")
+            self.logger.info(f"====> Will continue in {self.config['debug_timeout']} seconds <====\n")
+            print(f"\n\n>> DEBUG INTERACTIVE: {message}")
+            print(f">> Browser will continue automatically in {self.config['debug_timeout']} seconds <<\n\n")
+            
             await take_detailed_screenshot(self.page, "debug_pause")
             await asyncio.sleep(self.config["debug_timeout"])
             

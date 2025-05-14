@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 # Import our modules
 from .auth import login_to_club_caddie
 from .booking import navigate_to_tee_sheet, book_tee_time, debug_interactive
-from ..utils.date_utils import calculate_target_sunday, calculate_available_dates
+from ..utils.date_utils import calculate_target_day, calculate_available_dates
 from ..utils.logger import setup_logger
 from ..utils.screenshot import take_detailed_screenshot
 
@@ -64,10 +64,11 @@ async def main():
             # Save available dates to run info
             run_info["available_dates"] = available_dates
             
-            # Step 3: Calculate target date (default to next Sunday)
-            target_date = calculate_target_sunday()
+            # Step 3: Calculate target date (using configured target day)
+            target_date = calculate_target_day()
+            target_day_name = os.getenv("TARGET_DAY", "Sunday")  # Get the name for logging
             if not target_date:
-                logger.info("No Sunday available within booking window, using furthest available date")
+                logger.info(f"No {target_day_name} available within booking window, using furthest available date")
                 target_date = available_dates[-1]['date']
             
             logger.info(f"Selected target date: {target_date}")
